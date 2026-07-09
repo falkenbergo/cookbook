@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\RhythmLume.Core\RhythmLume.Core.csproj" />
+    <ProjectReference Include="..\RhythmLume.Dsp\RhythmLume.Dsp.csproj" />
+    <ProjectReference Include="..\RhythmLume.Audio.Windows\RhythmLume.Audio.Windows.csproj" />
+    <ProjectReference Include="..\RhythmLume.Hue\RhythmLume.Hue.csproj" />
+    <ProjectReference Include="..\RhythmLume.Effects\RhythmLume.Effects.csproj" />
+    <ProjectReference Include="..\RhythmLume.Infrastructure\RhythmLume.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.9" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>RhythmLume</AssemblyName>
+    <RootNamespace>RhythmLume.App</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
