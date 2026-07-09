@@ -274,7 +274,7 @@ public sealed class RealTimeAudioAnalyzer : IAudioAnalyzer
             noiseFloor: options.NoiseFloor);
         _chunks = Channel.CreateBounded<AudioChunk>(new BoundedChannelOptions(12)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false,
             AllowSynchronousContinuations = false

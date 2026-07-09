@@ -1,11 +1,15 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using RhythmLume.Core;
+using RhythmLume.Hue;
 
 namespace RhythmLume.App;
 
@@ -190,8 +194,8 @@ public sealed class ColorSwatchViewModel : ObservableObject
         var hex = value?.Trim().TrimStart('#');
         if (hex?.Length != 6 ||
             !byte.TryParse(hex[..2], NumberStyles.HexNumber, null, out var red) ||
-            !byte.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, null, out var green) ||
-            !byte.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, null, out var blue))
+            !byte.TryParse(hex.AsSpan(2, 2), NumberStyles.HexNumber, null, out var green) ||
+            !byte.TryParse(hex.AsSpan(4, 2), NumberStyles.HexNumber, null, out var blue))
         {
             return false;
         }
@@ -971,8 +975,9 @@ public sealed class MainViewModel : ObservableObject
             StatusMessage = "Bridge link button not detected";
         }
         catch (Exception exception) when (
-            exception is InvalidOperationException or ArgumentException or HttpRequestException or
-                IOException or UnauthorizedAccessException)
+            exception is not OutOfMemoryException and
+            not StackOverflowException and
+            not AccessViolationException)
         {
             ErrorMessage = exception.Message;
             StatusMessage = "Action needs attention";

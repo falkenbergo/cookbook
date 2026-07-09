@@ -18,7 +18,6 @@ public sealed class HueStreamingClient : IHueStreamingClient
     private HttpClient? _httpClient;
     private UdpDatagramTransport? _udpTransport;
     private DtlsTransport? _dtlsTransport;
-    private HueBridgeInfo? _bridge;
     private HueCredentials? _credentials;
     private EntertainmentConfiguration? _configuration;
     private int _sequence;
@@ -118,7 +117,6 @@ public sealed class HueStreamingClient : IHueStreamingClient
                 await DisconnectCoreAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            _bridge = bridge;
             _credentials = credentials;
             _configuration = configuration;
             _httpClient = HueHttp.CreateClient(bridge, Uri.UriSchemeHttps, _logger);
@@ -141,27 +139,30 @@ public sealed class HueStreamingClient : IHueStreamingClient
                 preSharedKey);
             var tlsClient = new HuePskTlsClient(identity);
             var protocol = new DtlsClientProtocol();
-            try
-            {
-                _dtlsTransport = await Task.Run(
-                        () => protocol.Connect(tlsClient, _udpTransport),
-                        CancellationToken.None)
-                    .WaitAsync(TimeSpan.FromSeconds(8), cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch
-            {
-                _udpTransport.Close();
-                _udpTransport = null;
-                await TryStopConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
-                throw;
-            }
+            _dtlsTransport = await Task.Run(
+                    () => protocol.Connect(tlsClient, _udpTransport),
+                    CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(8), cancellationToken)
+                .ConfigureAwait(false);
 
             _sequence = 0;
             _logger.LogInformation(
                 "Hue Entertainment stream connected to {Area} with {ChannelCount} channels.",
                 configuration.Name,
                 configuration.Channels.Count);
+        }
+        catch
+        {
+            _dtlsTransport?.Close();
+            _dtlsTransport = null;
+            _udpTransport?.Close();
+            _udpTransport = null;
+            await TryStopConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
+            _httpClient?.Dispose();
+            _httpClient = null;
+            _credentials = null;
+            _configuration = null;
+            throw;
         }
         finally
         {
@@ -232,7 +233,6 @@ public sealed class HueStreamingClient : IHueStreamingClient
         await TryStopConfigurationAsync(cancellationToken).ConfigureAwait(false);
         _httpClient?.Dispose();
         _httpClient = null;
-        _bridge = null;
         _credentials = null;
         _configuration = null;
         _logger.LogInformation("Hue Entertainment stream disconnected.");
@@ -250,7 +250,7 @@ public sealed class HueStreamingClient : IHueStreamingClient
             await SetConfigurationActionAsync("stop", cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (
-            exception is HttpRequestException or TaskCanceledException)
+            exception is HttpRequestException or TaskCanceledException or HueApiException)
         {
             _logger.LogWarning(
                 exception,

@@ -43,10 +43,8 @@ public sealed class HueBridgeDiscovery : IHueBridgeDiscovery
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCancellation.CancelAfter(timeout);
-        var mdns = DiscoverMdnsSafeAsync(timeout, timeoutCancellation.Token);
-        var broker = DiscoverBrokerSafeAsync(timeoutCancellation.Token);
+        var mdns = DiscoverMdnsSafeAsync(timeout, cancellationToken);
+        var broker = DiscoverBrokerSafeAsync(timeout, cancellationToken);
         var results = (await Task.WhenAll(mdns, broker).ConfigureAwait(false))
             .SelectMany(static bridges => bridges)
             .GroupBy(
@@ -126,13 +124,15 @@ public sealed class HueBridgeDiscovery : IHueBridgeDiscovery
     }
 
     private async Task<IReadOnlyList<HueBridgeInfo>> DiscoverBrokerSafeAsync(
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         try
         {
-            var bridges = await _httpClient.GetFromJsonAsync<BrokerBridge[]>(
-                DiscoveryEndpoint,
-                cancellationToken).ConfigureAwait(false);
+            var bridges = await _httpClient
+                .GetFromJsonAsync<BrokerBridge[]>(DiscoveryEndpoint, cancellationToken)
+                .WaitAsync(timeout, cancellationToken)
+                .ConfigureAwait(false);
             return bridges?.Select(static bridge => new HueBridgeInfo(
                     bridge.Id ?? string.Empty,
                     bridge.InternalIpAddress ?? string.Empty,
@@ -281,6 +281,11 @@ public sealed class HueCapabilityDetector : IHueCapabilityDetector
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         using var config = JsonDocument.Parse(json);
+        if (HueJson.TryGetV1Error(config.RootElement, out var error))
+        {
+            throw new HueApiException(error);
+        }
+
         var modelId = config.RootElement.TryGetProperty("modelid", out var model)
             ? model.GetString()
             : bridge.ModelId;
@@ -342,6 +347,8 @@ public sealed class HueBridgeClient : IHueBridgeClient
         ArgumentNullException.ThrowIfNull(bridge);
         ArgumentNullException.ThrowIfNull(credentials);
         await StopWorkerAsync(cancellationToken).ConfigureAwait(false);
+        _httpClient?.Dispose();
+        _httpClient = null;
         var capabilities = await _capabilityDetector.DetectAsync(
             bridge,
             credentials,
@@ -694,6 +701,8 @@ internal static class HueHttp
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        var contentSnapshot = await CaptureContentAsync(content, cancellationToken).ConfigureAwait(false);
+        content?.Dispose();
         try
         {
             return await SendAsync(
@@ -701,7 +710,7 @@ internal static class HueHttp
                 Uri.UriSchemeHttps,
                 method,
                 path,
-                content,
+                CreateContent(contentSnapshot),
                 applicationKey,
                 logger,
                 cancellationToken).ConfigureAwait(false);
@@ -717,7 +726,7 @@ internal static class HueHttp
                 Uri.UriSchemeHttp,
                 method,
                 path,
-                content,
+                CreateContent(contentSnapshot),
                 applicationKey,
                 logger,
                 cancellationToken).ConfigureAwait(false);
@@ -763,6 +772,39 @@ internal static class HueHttp
         }
 
         return await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<HttpContentSnapshot?> CaptureContentAsync(
+        HttpContent? content,
+        CancellationToken cancellationToken)
+    {
+        if (content is null)
+        {
+            return null;
+        }
+
+        var bytes = await content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var headers = content.Headers
+            .Select(static header =>
+                new KeyValuePair<string, string[]>(header.Key, header.Value.ToArray()))
+            .ToArray();
+        return new(bytes, headers);
+    }
+
+    private static HttpContent? CreateContent(HttpContentSnapshot? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        var content = new ByteArrayContent(snapshot.Bytes);
+        foreach (var header in snapshot.Headers)
+        {
+            content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        return content;
     }
 
     private static bool ValidateBridgeCertificate(
@@ -819,6 +861,10 @@ internal static class HueHttp
         address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
             ? $"[{host}]"
             : host;
+
+    private sealed record HttpContentSnapshot(
+        byte[] Bytes,
+        IReadOnlyList<KeyValuePair<string, string[]>> Headers);
 }
 
 internal static class HueJson

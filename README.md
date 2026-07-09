@@ -22,6 +22,15 @@ The repository contains a complete .NET 8 WPF MVP:
 
 Software behavior is covered by automated tests. Actual lamp timing, certificate variants, Entertainment-area ownership, Zigbee reachability, and Bridge v1 firmware behavior require verification on real Hue hardware.
 
+Verification performed for this revision:
+
+- `dotnet build RhythmLume.sln --configuration Release` — succeeded with 0 warnings and 0 errors
+- `dotnet test RhythmLume.sln --configuration Release --no-build` — 10/10 tests passed
+- `dotnet format RhythmLume.sln --verify-no-changes --severity warn` — passed
+- `dotnet list RhythmLume.sln package --vulnerable --include-transitive` — no known vulnerable packages
+
+The cloud build host is Linux, so it can cross-compile WPF but cannot launch the Windows UI or access WASAPI. Windows startup/audio and real Hue Bridge/lamp behavior remain the explicit hardware verification boundary.
+
 ## Requirements
 
 - Windows 10 version 2004 (build 19041) or newer

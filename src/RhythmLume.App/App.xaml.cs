@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,9 +16,9 @@ public partial class App : Application
 {
     private IHost? _host;
 
-    protected override async void OnStartup(StartupEventArgs eventArgs)
+    protected override async void OnStartup(StartupEventArgs e)
     {
-        base.OnStartup(eventArgs);
+        base.OnStartup(e);
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         _host = Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
@@ -86,7 +87,7 @@ public partial class App : Application
         }
     }
 
-    protected override void OnExit(ExitEventArgs eventArgs)
+    protected override void OnExit(ExitEventArgs e)
     {
         DispatcherUnhandledException -= OnDispatcherUnhandledException;
         if (_host is not null)
@@ -107,11 +108,18 @@ public partial class App : Application
             }
             finally
             {
-                _host.Dispose();
+                if (_host is IAsyncDisposable asyncDisposable)
+                {
+                    asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                else
+                {
+                    _host.Dispose();
+                }
             }
         }
 
-        base.OnExit(eventArgs);
+        base.OnExit(e);
     }
 
     private static void OnDispatcherUnhandledException(

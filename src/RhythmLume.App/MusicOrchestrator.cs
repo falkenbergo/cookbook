@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using RhythmLume.Core;
+using RhythmLume.Hue;
 
 namespace RhythmLume.App;
 
@@ -241,11 +244,11 @@ public sealed class MusicOrchestrator : IAsyncDisposable
                     latest = newer;
                 }
 
-                var remaining = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), nextSend);
-                if (nextSend > Stopwatch.GetTimestamp())
+                var now = Stopwatch.GetTimestamp();
+                if (nextSend > now)
                 {
                     var delay = TimeSpan.FromSeconds(
-                        (nextSend - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency);
+                        (nextSend - now) / (double)Stopwatch.Frequency);
                     if (delay > TimeSpan.Zero)
                     {
                         await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
@@ -302,7 +305,7 @@ public sealed class MusicOrchestrator : IAsyncDisposable
         }
     }
 
-    private IReadOnlyDictionary<byte, RgbColor> MapChannels(
+    private static IReadOnlyDictionary<byte, RgbColor> MapChannels(
         IReadOnlyList<LightUpdate> updates,
         EntertainmentConfiguration configuration)
     {
@@ -310,15 +313,22 @@ public sealed class MusicOrchestrator : IAsyncDisposable
             static update => update.LightId,
             StringComparer.Ordinal);
         var result = new Dictionary<byte, RgbColor>();
+        var hasMembershipData = configuration.Channels.Any(
+            static channel => channel.LightServiceIds.Count > 0);
         for (var index = 0; index < configuration.Channels.Count; index++)
         {
             var channel = configuration.Channels[index];
             var update = channel.LightServiceIds
                 .Select(id => byLight.GetValueOrDefault(id))
                 .FirstOrDefault(static candidate => candidate is not null);
-            update ??= updates.Count == 0 ? null : updates[index % updates.Count];
+            if (update is null && !hasMembershipData && updates.Count > 0)
+            {
+                update = updates[index % updates.Count];
+            }
+
             if (update is null)
             {
+                result[channel.ChannelId] = RgbColor.Black;
                 continue;
             }
 
@@ -334,10 +344,7 @@ public sealed class MusicOrchestrator : IAsyncDisposable
 
     private void OnSamplesAvailable(AudioChunk chunk)
     {
-        if (!_analyzer.TrySubmit(chunk))
-        {
-            _logger.LogTrace("Dropped an audio chunk because the DSP queue was full.");
-        }
+        _analyzer.TrySubmit(chunk);
     }
 
     private void OnAnalysisAvailable(AnalysisFrame frame)
